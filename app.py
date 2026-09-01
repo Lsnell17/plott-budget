@@ -112,6 +112,12 @@ def init_db():
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS monthly_income (
+                month_key TEXT PRIMARY KEY,
+                income REAL NOT NULL DEFAULT 0
+            )
+        """)
         count = conn.execute("SELECT COUNT(*) FROM budgets").fetchone()[0]
         if count == 0:
             conn.executemany(
@@ -149,6 +155,23 @@ def delete_purchase(purchase_id):
 def update_budget(category, amount):
     with get_conn() as conn:
         conn.execute("UPDATE budgets SET monthly_budget = ? WHERE category = ?", (float(amount), category))
+
+
+def get_month_income(month_key):
+    with get_conn() as conn:
+        row = conn.execute("SELECT income FROM monthly_income WHERE month_key = ?", (month_key,)).fetchone()
+        return float(row[0]) if row else 0.0
+
+
+def update_month_income(month_key, amount):
+    with get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO monthly_income(month_key, income) VALUES (?, ?)
+            ON CONFLICT(month_key) DO UPDATE SET income = excluded.income
+            """,
+            (month_key, float(amount)),
+        )
 
 
 def status_color(remaining_pct, remaining):
@@ -198,6 +221,24 @@ with left:
                 st.rerun()
 
     st.divider()
+    st.subheader("Monthly income")
+    current_month_key = date.today().strftime("%Y-%m")
+    current_income = get_month_income(current_month_key)
+    with st.expander("Set or edit this month\'s income", expanded=current_income == 0):
+        income_amount = st.number_input(
+            "Total household income for this month",
+            min_value=0.0,
+            value=float(current_income),
+            step=100.0,
+            format="%.2f",
+            key="monthly_income_amount",
+        )
+        if st.button("Save monthly income", use_container_width=True):
+            update_month_income(current_month_key, income_amount)
+            st.success("Monthly income updated.")
+            st.rerun()
+
+    st.divider()
     st.subheader("Budget settings")
     with st.expander("Change a monthly category budget"):
         edit_category = st.selectbox("Category to change", budgets["category"].tolist(), key="edit_cat")
@@ -224,10 +265,16 @@ with right:
     total_budget = dashboard["monthly_budget"].sum()
     total_spent = dashboard["spent"].sum()
     total_remaining = total_budget - total_spent
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Tracked budget", f"${total_budget:,.2f}")
-    m2.metric("Spent this month", f"${total_spent:,.2f}")
-    m3.metric("Remaining", f"${total_remaining:,.2f}")
+    monthly_income = get_month_income(month_prefix)
+    income_after_spending = monthly_income - total_spent
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Monthly income", f"${monthly_income:,.2f}")
+    m2.metric("Tracked budget", f"${total_budget:,.2f}")
+    m3.metric("Spent this month", f"${total_spent:,.2f}")
+    m4.metric("Income left after spending", f"${income_after_spending:,.2f}")
+
+    st.caption(f"Category budget remaining: ${total_remaining:,.2f}")
 
     group_filter = st.selectbox("Show", ["All categories"] + sorted(dashboard["group_name"].unique().tolist()))
     shown = dashboard if group_filter == "All categories" else dashboard[dashboard["group_name"] == group_filter]
