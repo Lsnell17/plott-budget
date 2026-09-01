@@ -185,12 +185,71 @@ def status_color(remaining_pct, remaining):
 st.set_page_config(page_title="PLOTT Budget", page_icon="💵", layout="wide")
 st.markdown("""
 <style>
-.block-container {padding-top: 1.5rem; padding-bottom: 3rem; max-width: 1400px;}
-.budget-card {background: white; border: 1px solid #e5e7eb; border-radius: 14px; padding: 15px 17px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.04);}
-.budget-name {font-size: .95rem; font-weight: 650; color: #111827;}
-.budget-sub {font-size: .82rem; color: #6b7280; margin-top: 2px;}
-.budget-number {font-size: 1.4rem; font-weight: 800; margin-top: 7px;}
-.small-label {font-size: .75rem; color: #6b7280; text-transform: uppercase; letter-spacing: .05em;}
+.block-container {padding-top: 1.4rem; padding-bottom: 3rem; max-width: 1500px;}
+.meter-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 14px;
+    margin-top: 14px;
+}
+.meter-card {
+    border: 1px solid rgba(128,128,128,.26);
+    border-radius: 14px;
+    padding: 16px 14px 14px;
+    background: rgba(128,128,128,.055);
+    min-height: 260px;
+}
+.meter-name {
+    font-size: 1rem;
+    font-weight: 800;
+    line-height: 1.2rem;
+    text-align: left;
+    margin-bottom: 3px;
+}
+.meter-group {
+    font-size: .78rem;
+    opacity: .68;
+    text-align: left;
+    min-height: 1.1rem;
+}
+.donut {
+    width: 128px;
+    height: 128px;
+    border-radius: 50%;
+    margin: 14px auto 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+.donut::after {
+    content: "";
+    width: 88px;
+    height: 88px;
+    border-radius: 50%;
+    background: var(--background-color);
+    position: absolute;
+}
+.donut-center {
+    position: relative;
+    z-index: 1;
+    text-align: center;
+    line-height: 1.05;
+}
+.donut-pct {font-size: 1.28rem; font-weight: 900;}
+.donut-label {font-size: .72rem; opacity: .72; margin-top: 3px;}
+.meter-left {font-size: 1.05rem; font-weight: 900; text-align:center; margin-top: 2px;}
+.meter-sub {font-size: .76rem; opacity: .72; text-align:center; line-height: 1.05rem; margin-top: 4px;}
+@media (max-width: 760px) {
+    .meter-grid {grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;}
+    .meter-card {min-height: 220px; padding: 12px 9px;}
+    .donut {width: 105px; height: 105px;}
+    .donut::after {width: 72px; height: 72px;}
+    .meter-name {font-size: .88rem;}
+    .meter-group {font-size: .68rem;}
+    .meter-left {font-size: .9rem;}
+    .meter-sub {font-size: .66rem;}
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -279,23 +338,31 @@ with right:
     group_filter = st.selectbox("Show", ["All categories"] + sorted(dashboard["group_name"].unique().tolist()))
     shown = dashboard if group_filter == "All categories" else dashboard[dashboard["group_name"] == group_filter]
 
+    meter_cards = []
     for _, row in shown.iterrows():
         color = status_color(row["remaining_pct"], row["remaining"])
         pct_used = 0 if row["monthly_budget"] <= 0 else min(max(row["spent"] / row["monthly_budget"] * 100, 0), 100)
-        over_text = " • OVER BUDGET" if row["remaining"] < 0 else ""
-        st.markdown(
+        pct_left = max(0, min(100, 100 - pct_used))
+        over_text = "OVER" if row["remaining"] < 0 else f"{pct_left:.0f}% left"
+
+        meter_cards.append(
             f"""
-            <div class="budget-card">
-                <div class="budget-name">{row['category']}</div>
-                <div class="budget-sub">{row['group_name']} • ${row['spent']:,.2f} spent of ${row['monthly_budget']:,.2f}{over_text}</div>
-                <div class="budget-number" style="color:{color}">${row['remaining']:,.2f} left</div>
-                <div style="height:8px;background:#e5e7eb;border-radius:99px;margin-top:8px;overflow:hidden;">
-                    <div style="width:{pct_used:.1f}%;height:100%;background:{color};"></div>
+            <div class="meter-card">
+                <div class="meter-name">{row['category']}</div>
+                <div class="meter-group">{row['group_name']}</div>
+                <div class="donut" style="background:conic-gradient({color} 0 {pct_used:.1f}%, rgba(128,128,128,.20) {pct_used:.1f}% 100%);">
+                    <div class="donut-center">
+                        <div class="donut-pct">{pct_used:.0f}%</div>
+                        <div class="donut-label">used</div>
+                    </div>
                 </div>
+                <div class="meter-left" style="color:{color}">${row['remaining']:,.2f} left</div>
+                <div class="meter-sub">${row['spent']:,.2f} spent of ${row['monthly_budget']:,.2f}</div>
             </div>
-            """,
-            unsafe_allow_html=True,
+            """
         )
+
+    st.markdown('<div class="meter-grid">' + ''.join(meter_cards) + '</div>', unsafe_allow_html=True)
 
 st.divider()
 st.subheader("Purchase history")
